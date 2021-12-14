@@ -1,0 +1,4 @@
+[deps]
+LightXML = "9c8b4983-aa76-5018-a973-4c85ecc9e179"
+Pipe = "b98c9c47-44ae-5843-9183-064241ee97a0"
+SVG = "f377ba27-75b0-41bf-bf2c-536bab790fd1"

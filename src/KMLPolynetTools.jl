@@ -5,6 +5,7 @@ export Points, Poly, Polynet, extract_polynet_from_kml, load, save, scaled_svg
 using Serialization
 using LightXML
 using SVG
+using Pipe
 
 struct Points 
     d::Dict{String, Int}
