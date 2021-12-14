@@ -54,10 +54,12 @@ function save(fn, pm::Polynet)::Polynet
     pm
 end
 
-function scaled_svg(polymesh, filename; inhtml=true)
+scaled_svg(pnet, filename; inhtml=true) = scaled_svg(pnet.xs, pnet.ys, pnet.polys, filename; inhtml)
+
+function scaled_svg(unscaled_xs, unscaled_ys, polys, filename; inhtml=true)
     local xtreme, ytreme, xs, ys
-    xtreme = extrema(polymesh.points.xs)
-    ytreme = extrema(polymesh.points.ys)
+    xtreme = extrema(unscaled_xs)
+    ytreme = extrema(unscaled_ys)
     xmx = xtreme[2] - xtreme[1]
     ymx = ytreme[2] - ytreme[1]
     scale = 800 / min(xmx, ymx)
@@ -66,10 +68,10 @@ function scaled_svg(polymesh, filename; inhtml=true)
     fx = x -> round(Int, scale * (x - xtreme[1]))
     fy = y -> round(Int, ymx - scale * (y - ytreme[1]))
 
-    xs = map(fx, polymesh.points.xs)
-    ys = map(fy, polymesh.points.ys)
+    xs = map(fx, unscaled_xs)
+    ys = map(fy, unscaled_ys)
 
-    asSvg(xs, ys, polymesh.polys, filename, 800, 1200, "0 0 $xmx $ymx"; inhtml)
+    asSvg(xs, ys, polys, filename, 800, 1200, "0 0 $xmx $ymx"; inhtml)
 end
 
 function asSvg(xs, ys, polys::Vector{Poly}, filename, width, height, viewbox; inhtml=true)
@@ -118,6 +120,15 @@ function get_or_cache_polynet(kml, cachefn)
     pmesh
 end
 
+function shared_points(pnet)
+    used = zeros(Int, length(pnet.points.xs))
+    for poly in pnet.polys
+        for pnt in poly.perimeter
+            used[pnt] += 1
+        end
+    end
+    used
+end
 
 ###
 end
