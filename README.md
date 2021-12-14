@@ -1,4 +1,4 @@
-# KMLPolyNetTools
+# KMLPolynetTools
 Tools for manipulating 2D regions split into N-Gons where N is large
 
 Made specifically for processing the KML files produced by the UK Govt. Portal but might generalise so broken out of my project
