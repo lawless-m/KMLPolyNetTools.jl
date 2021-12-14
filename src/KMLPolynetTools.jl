@@ -46,7 +46,7 @@ function load(fn)::Union{Polynet, Nothing}
     pm
 end
 
-function save(fn, pm::Polynet)::Polymesh
+function save(fn, pm::Polynet)::Polynet
     open(fn, "w+") do io
         println(stderr, "ser")
         serialize(io, pm)
