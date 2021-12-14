@@ -2,6 +2,8 @@ module KMLPolynetTools
 
 export Points, Poly, Polynet, extract_polynet_from_kml, load, save, scaled_svg, get_or_cache_polynet
 
+export shared_points
+
 using Serialization
 using LightXML
 using SVG
@@ -66,8 +68,8 @@ function scaled_svg(unscaled_xs, unscaled_ys, polys, filename; inhtml=true)
     scale = 800 / min(xmx, ymx)
     xmx *= scale
     ymx *= scale
-    fx = x -> round(Int, scale * (x - xtreme[1]))
-    fy = y -> round(Int, ymx - scale * (y - ytreme[1]))
+    fx = x -> scale * (x - xtreme[1])
+    fy = y -> ymx - scale * (y - ytreme[1])
 
     xs = map(fx, unscaled_xs)
     ys = map(fy, unscaled_ys)
@@ -124,7 +126,7 @@ end
 function shared_points(pnet)
     used = zeros(Int, length(pnet.points.xs))
     for poly in pnet.polys
-        for pnt in poly.perimeter
+        for pnt in poly.perimeter[1:end-1]
             used[pnt] += 1
         end
     end
