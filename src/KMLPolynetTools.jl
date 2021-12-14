@@ -1,6 +1,6 @@
 module KMLPolynetTools
 
-export Points, Poly, Polynet, extract_polynet_from_kml, load, save, scaled_svg
+export Points, Poly, Polynet, extract_polynet_from_kml, load, save, scaled_svg, get_or_cache_polynet
 
 using Serialization
 using LightXML
