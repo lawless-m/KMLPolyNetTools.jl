@@ -14,6 +14,16 @@ struct Points
     Points() = new(Dict{String, Int}(), Vector{Float64}(), Vector{Float64}())
 end
 
+struct Polynet
+    points
+    polys
+end
+
+struct Poly
+    meta
+    perimeter
+end
+
 function pointn(ps::Points, txt)
     n = get(ps.d, txt, 0)
     if n == 0
@@ -26,15 +36,6 @@ function pointn(ps::Points, txt)
     n
 end
 
-struct Poly
-    meta
-    perimeter
-end
-
-struct Polynet
-    points
-    polys
-end
 
 function load(fn)::Union{Polynet, Nothing}
     pm = nothing
@@ -54,7 +55,7 @@ function save(fn, pm::Polynet)::Polynet
     pm
 end
 
-scaled_svg(pnet, filename; inhtml=true) = scaled_svg(pnet.xs, pnet.ys, pnet.polys, filename; inhtml)
+scaled_svg(pnet, filename; inhtml=true) = scaled_svg(pnet.points.xs, pnet.points.ys, pnet.polys, filename; inhtml)
 
 function scaled_svg(unscaled_xs, unscaled_ys, polys, filename; inhtml=true)
     local xtreme, ytreme, xs, ys
