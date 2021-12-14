@@ -1,7 +1,7 @@
 name = "KMLPolynetTools"
+uuid = "d65a160e-5ce2-11ec-34c9-73adc0c7849b"
 authors = ["Matt H <matt-github@steponnopets.net> and contributors"]
 version = "0.1.0"
-uuid = "d65a160e-5ce2-11ec-34c9-73adc0c7849b"
 
 [deps]
 LightXML = "9c8b4983-aa76-5018-a973-4c85ecc9e179"
