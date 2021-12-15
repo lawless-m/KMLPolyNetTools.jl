@@ -14,17 +14,25 @@ struct Points
     xs::Vector{Float64}
     ys::Vector{Float64}
     Points() = new(Dict{String, Int}(), Vector{Float64}(), Vector{Float64}())
+    Points(d, xs, ys) = new(d, xs, ys)
 end
+
+Base.copy(p::Points) = Points(copy(p.d), copy(p.xs), copy(p.ys))
 
 struct Polynet
     points
     polys
 end
 
+Base.copy(p::Polynet) = Polynet(copy(p.points), copy(p.polys))
+
 struct Poly
     meta
     perimeter
 end
+
+Base.copy(p::Poly) = Poly(copy(p.meta), copy(p.perimeter))
+
 
 function pointn(ps::Points, txt)
     n = get(ps.d, txt, 0)
@@ -126,7 +134,7 @@ end
 function shared_points(pnet)
     used = zeros(Int, length(pnet.points.xs))
     for poly in pnet.polys
-        for pnt in poly.perimeter[1:end-1]
+        for pnt in poly.perimeter
             used[pnt] += 1
         end
     end
