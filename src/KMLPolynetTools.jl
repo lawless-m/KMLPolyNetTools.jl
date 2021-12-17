@@ -9,11 +9,13 @@ using LightXML
 using SVG
 using Pipe
 
+const PointXY = Tuple{Float64, Float64} # (x,y)
+
 struct Points 
-    d::Dict{String, Int}
+    d::Dict{PointXY, Int}
     xs::Vector{Float64}
     ys::Vector{Float64}
-    Points() = new(Dict{String, Int}(), Vector{Float64}(), Vector{Float64}())
+    Points() = new(Dict{PointXY, Int}(), Vector{Float64}(), Vector{Float64}())
     Points(d, xs, ys) = new(d, xs, ys)
 end
 
@@ -29,23 +31,37 @@ Base.copy(p::Polynet) = Polynet(copy(p.points), copy(p.polys))
 struct Poly
     meta
     perimeter
+    function Poly(m, p)
+        pp = Vector{Int}(undef, length(p))
+        lastp = 0
+        k = 0
+        for i in 1:length(p)
+            if p[i] != lastp
+                k += 1
+                lastp = pp[k] = p[i]
+            end
+        end
+        new(m, pp[1:k])
+    end
 end
 
 Base.copy(p::Poly) = Poly(copy(p.meta), copy(p.perimeter))
 
+function txtXY(txt; digits=5)::PointXY
+    Tuple(map(t->round(parse(Float64, t); digits), split(txt, ",")))
+end
 
 function pointn(ps::Points, txt; digits=5)
-    n = get(ps.d, txt, 0)
+    xy = txtXY(txt; digits)
+    n = get(ps.d, xy, 0)
     if n == 0
         n = length(ps.d) + 1
-        ps.d[txt] = n 
-        fpair = split(txt, ",")
-        push!(ps.xs, round(parse(Float64, fpair[1]); digits))
-        push!(ps.ys, round(parse(Float64, fpair[2]); digits))
+        ps.d[xy] = n
+        push!(ps.xs, xy[1])
+        push!(ps.ys, xy[2])
     end
     n
 end
-
 
 function load(fn)::Union{Polynet, Nothing}
     pm = nothing
@@ -66,7 +82,7 @@ end
 
 scaled_svg(pnet, filename; inhtml=true) = scaled_svg(pnet.points.xs, pnet.points.ys, pnet.polys, filename; inhtml)
 
-function scaled_svg(unscaled_xs, unscaled_ys, polys, filename; inhtml=true)
+function scaled_svg(unscaled_xs, unscaled_ys, polys, filename; inhtml=true, digits=3)
     local xtreme, ytreme, xs, ys
     xtreme = extrema(unscaled_xs)
     ytreme = extrema(unscaled_ys)
@@ -75,8 +91,8 @@ function scaled_svg(unscaled_xs, unscaled_ys, polys, filename; inhtml=true)
     scale = 800 / min(xmx, ymx)
     xmx *= scale
     ymx *= scale
-    fx = x -> scale * (x - xtreme[1])
-    fy = y -> ymx - scale * (y - ytreme[1])
+    fx = x -> round(scale * (x - xtreme[1]); digits)
+    fy = y -> round(ymx - scale * (y - ytreme[1]); digits)
 
     xs = map(fx, unscaled_xs)
     ys = map(fy, unscaled_ys)
@@ -111,7 +127,10 @@ function extract_polynet_from_kml(xdoc; digits=5)
                     for bound in get_elements_by_tagname(pol, "outerBoundaryIs")
                         for lr in get_elements_by_tagname(bound, "LinearRing")
                             for cords in get_elements_by_tagname(lr, "coordinates")
-                                push!(polys, Poly(meta, map(p->pointn(points, p; digits), split(content(cords), " "))))
+                                poly = Poly(meta, map(p->pointn(points, p; digits), split(content(cords), " ")))
+                                if length(poly.perimeter) > 3
+                                    push!(polys, poly)
+                                end
                             end
                         end
                     end
