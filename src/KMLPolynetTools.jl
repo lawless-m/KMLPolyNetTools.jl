@@ -40,8 +40,8 @@ function pointn(ps::Points, txt, digits=5)
         n = length(ps.d) + 1
         ps.d[txt] = n 
         fpair = split(txt, ",")
-        push!(ps.xs, round(parse(Float64, fpair[1]), digits)
-        push!(ps.ys, round(parse(Float64, fpair[2]), digits)
+        push!(ps.xs, round(parse(Float64, fpair[1]), digits))
+        push!(ps.ys, round(parse(Float64, fpair[2]), digits))
     end
     n
 end
