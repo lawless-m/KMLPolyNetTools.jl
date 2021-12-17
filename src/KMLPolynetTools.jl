@@ -34,14 +34,14 @@ end
 Base.copy(p::Poly) = Poly(copy(p.meta), copy(p.perimeter))
 
 
-function pointn(ps::Points, txt, digits=5)
+function pointn(ps::Points, txt; digits=5)
     n = get(ps.d, txt, 0)
     if n == 0
         n = length(ps.d) + 1
         ps.d[txt] = n 
         fpair = split(txt, ",")
-        push!(ps.xs, round(parse(Float64, fpair[1]), digits))
-        push!(ps.ys, round(parse(Float64, fpair[2]), digits))
+        push!(ps.xs, round(parse(Float64, fpair[1]); digits))
+        push!(ps.ys, round(parse(Float64, fpair[2]); digits))
     end
     n
 end
@@ -89,7 +89,7 @@ function asSvg(xs, ys, polys::Vector{Poly}, filename, width, height, viewbox; in
     SVG.write(filename, SVG.Svg(), width, height ; viewbox, inhtml, objwrite_fn=w)
 end
 
-function extract_polynet_from_kml(xdoc)
+function extract_polynet_from_kml(xdoc; digits=5)
     polys = Vector{Poly}()
     points = Points()
     for fr in get_elements_by_tagname(get_elements_by_tagname(root(xdoc), "Document")[1], "Folder")
@@ -111,7 +111,7 @@ function extract_polynet_from_kml(xdoc)
                     for bound in get_elements_by_tagname(pol, "outerBoundaryIs")
                         for lr in get_elements_by_tagname(bound, "LinearRing")
                             for cords in get_elements_by_tagname(lr, "coordinates")
-                                push!(polys, Poly(meta, map(p->pointn(points, p), split(content(cords), " "))))
+                                push!(polys, Poly(meta, map(p->pointn(points, p; digits), split(content(cords), " "))))
                             end
                         end
                     end
