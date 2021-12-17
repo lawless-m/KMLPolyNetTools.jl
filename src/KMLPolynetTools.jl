@@ -122,12 +122,15 @@ function extract_polynet_from_kml(xdoc; digits=5)
     Polynet(points, polys)
 end
 
-function get_or_cache_polynet(kml, cachefn)
-    pmesh = load(cachefn)
-    if pmesh === nothing        
-        pmesh = @pipe parse_file(kml) |> extract_polynet_from_kml |> save(cachefn, _)
+function get_or_cache_polynet(kml, cachefn; digits=5, force=false)
+    pnet::Union{Polynet, Nothing} = nothing
+    if !force
+        pnet = load(cachefn)
     end
-    pmesh
+    if pnet === nothing        
+        pnet = @pipe parse_file(kml) |> extract_polynet_from_kml(_; digits) |> save(cachefn, _)
+    end
+    pnet
 end
 
 function shared_points(pnet)
