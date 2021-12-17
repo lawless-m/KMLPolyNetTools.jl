@@ -34,14 +34,14 @@ end
 Base.copy(p::Poly) = Poly(copy(p.meta), copy(p.perimeter))
 
 
-function pointn(ps::Points, txt)
+function pointn(ps::Points, txt, digits=5)
     n = get(ps.d, txt, 0)
     if n == 0
         n = length(ps.d) + 1
         ps.d[txt] = n 
         fpair = split(txt, ",")
-        push!(ps.xs, parse(Float64, fpair[1]))
-        push!(ps.ys, parse(Float64, fpair[2]))
+        push!(ps.xs, round(parse(Float64, fpair[1]), digits)
+        push!(ps.ys, round(parse(Float64, fpair[2]), digits)
     end
     n
 end
@@ -59,7 +59,6 @@ end
 
 function save(fn, pm::Polynet)::Polynet
     open(fn, "w+") do io
-        println(stderr, "ser")
         serialize(io, pm)
     end
     pm
