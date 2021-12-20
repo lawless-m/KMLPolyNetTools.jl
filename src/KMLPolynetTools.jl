@@ -35,10 +35,33 @@ end
 
 Base.copy(r::Region) = Region(copy(r.meta), copy(r.polys))
 
-function add_perimeter!(r::Region, pointNs::Vector{Int})
-    ps = remove_repeats(pointNs)
-    if length(ps) > 3
-        push!(r.pointNs, ps)
+function split_at_intersections(pointNs::Vector{Int})
+    match(n) = return t->t==n
+    polys = Vector{Int}[]
+    poly = Int[]
+    s = 1
+    i = 1
+    while i < length(pointNs)
+        n = findlast(match(pointNs[i]), pointNs[i+1:end-1])
+        if n === nothing
+            push!(poly, pointNs[i])
+        else
+            push!(poly, pointNs[i])
+            append!(polys, split_at_intersections(pointNs[i:i+n]))
+            i = i + n 
+        end 
+        i += 1
+    end
+    push!(poly, pointNs[end])
+    push!(polys, poly)
+    polys
+end
+
+function add_perimeters!(r::Region, pointNs::Vector{Int})
+    for ps in split_at_intersections(remove_repeats(pointNs))
+        if length(ps) > 3
+            push!(r.pointNs, ps)
+        end
     end
     r
 end
@@ -49,35 +72,6 @@ struct Polynet
 end
 
 Base.copy(p::Polynet) = Polynet(copy(p.points), copy(p.regions))
-
-function remove_repeats_and_loops(src) ## removes geography
-    # src = [1,2,3,4,4,4,5,6,6,7,8,8,1]
-    # tgt = [1,2,3,4,5,6,7,8,1]
-    # src = [1,2,3,4,4,4,5,6,6,7,2,8,8,1]
-    # tgt = [1,2,8,1]
-
-    match(n) = return t->t==n
-
-    tgt = Vector{eltype(src)}(undef, length(src))
-    srci = 1
-    tgti = 0
-
-    while srci < length(src) && tgti < length(tgt)
-        n = findlast(match(src[srci]), src[srci+1:end])
-        tgti += 1
-        if n == nothing || (srci == 1 && n == length(src)-1)
-            tgt[tgti] = src[srci]
-        else
-            srci += n
-            tgt[tgti] = src[srci]
-        end
-        srci += 1
-    end
-    tgti += 1
-    tgt[tgti] = src[end]
-    tgt[1:tgti]
-end
-
 
 function remove_repeats(src)
     # src = [1,2,3,4,4,4,5,6,6,7,8,8,1]
@@ -98,7 +92,6 @@ function remove_repeats(src)
     tgt[tgti] = src[end]
     tgt[1:tgti]
 end
-
 
 function txtXY(txt; digits=5)::PointXY
     Tuple(map(t->round(parse(Float64, t); digits), split(txt, ",")))
@@ -133,9 +126,9 @@ function save(fn, pm::Polynet)::Polynet
     pm
 end
 
-scaled_svg(pnet, filename; inhtml=true, digits=3) = scaled_svg(pnet.points.xs, pnet.points.ys, pnet.regions, filename; inhtml, digits)
+scaled_svg(pnet, filename; inhtml=true, digits=3, colorfn=nothing) = scaled_svg(pnet.points.xs, pnet.points.ys, pnet.regions, filename; inhtml, digits, colorfn)
 
-function scaled_svg(unscaled_xs, unscaled_ys, regions, filename; inhtml=true, digits=3)
+function scaled_svg(unscaled_xs, unscaled_ys, regions, filename; inhtml=true, digits=3, colorfn=nothing)
     local xtreme, ytreme, xs, ys
     xtreme = extrema(unscaled_xs)
     ytreme = extrema(unscaled_ys)
@@ -150,11 +143,16 @@ function scaled_svg(unscaled_xs, unscaled_ys, regions, filename; inhtml=true, di
     xs = map(fx, unscaled_xs)
     ys = map(fy, unscaled_ys)
 
-    asSvg(xs, ys, regions, filename, 800, 1200, "0 0 $xmx $ymx"; inhtml)
+    asSvg(xs, ys, regions, filename, 800, 1200, "0 0 $xmx $ymx"; inhtml, colorfn)
 end
 
-function asSvg(xs, ys, regions::Vector{Region}, filename, width, height, viewbox; inhtml=true)
-    function pline(pointNs)
+function asSvg(xs, ys, regions::Vector{Region}, filename, width, height, viewbox; colorfn=nothing, inhtml=true)
+    
+    if colorfn === nothing
+        colorfn = (m)->"none"
+    end
+   
+    function pline(meta, pointNs)
         xy = remove_repeats(map(n->(xs[n], ys[n]), pointNs))
         nxs = Vector{eltype(xs)}(undef, length(xy))
         nys = Vector{eltype(ys)}(undef, length(xy))
@@ -162,13 +160,13 @@ function asSvg(xs, ys, regions::Vector{Region}, filename, width, height, viewbox
             nxs[i] = x
             nys[i] = y
         end
-        Polyline(nxs, nys)
+        Polyline(nxs, nys, style=Style(;fill=colorfn(meta)))
     end
-    w = (io, svg) -> foreach(r->foreach(ps->write(io, pline(ps)), r.pointNs), regions)
+    w = (io, svg) -> foreach(r->foreach(ps->write(io, pline(r.meta, ps)), r.pointNs), regions)
     SVG.write(filename, SVG.Svg(), width, height ; viewbox, inhtml, objwrite_fn=w)
 end
 
-function points_regions_from_kml(xdoc; digits=5)
+function polynet_from_kml(xdoc; digits=5)
     points = Points()
     regions = Region[]
     for fr in get_elements_by_tagname(get_elements_by_tagname(root(xdoc), "Document")[1], "Folder")
@@ -191,7 +189,7 @@ function points_regions_from_kml(xdoc; digits=5)
                     for bound in get_elements_by_tagname(pol, "outerBoundaryIs")
                         for lr in get_elements_by_tagname(bound, "LinearRing")
                             for cords in get_elements_by_tagname(lr, "coordinates")
-                                add_perimeter!(region, map(p->pointn(points, p; digits), split(content(cords), " ")))
+                                add_perimeters!(region, map(p->pointn(points, p; digits), split(content(cords), " ")))
                             end
                         end
                     end
@@ -200,7 +198,7 @@ function points_regions_from_kml(xdoc; digits=5)
             push!(regions, region)
         end
     end
-    points, regions
+    Polynet(points, regions)
 end
 
 function get_or_cache_polynet(kml, cachefn; digits=5, force=false)
@@ -209,9 +207,7 @@ function get_or_cache_polynet(kml, cachefn; digits=5, force=false)
         pnet = load(cachefn)
     end
     if pnet === nothing        
-        points, places = @pipe parse_file(kml) |> points_places_from_kml
-        polys = polys_from_places(places; digits)
-        pnet = Polynet(polys, places)
+        pnet = polynet_from_kml(parse_file(kml); digits)
         save(cachefn, pnet)
     end
     pnet
