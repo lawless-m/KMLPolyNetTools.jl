@@ -3,7 +3,7 @@ module KMLPolynetTools
 using Meshes
 
 #types
-export Points, Poly, Polynet
+export Polynet, Region, triangulate, bbox
 
 #methods
 export extract_polynet_from_kml, load, save, scaled_svg
@@ -16,13 +16,16 @@ using LightXML
 using SVG
 using Pipe
 
-struct Region
+struct Region{T}
     meta::Dict
-    areas::Vector{PolyArea}
-    Region(m::Dict) = new(m, Vector{PolyArea}())
+    areas::Vector{T}
+    Region{PolyArea}(m::Dict) = new{PolyArea}(m, Vector{PolyArea}())
+    Region{PolyArea}(m::Dict, as::Vector{PolyArea}) = new{PolyArea}(m, as)
+    Region{SimpleMesh}(m::Dict) = new{SimpleMesh}(m, Vector{SimpleMesh}())
+    Region{SimpleMesh}(m::Dict, as::Vector{SimpleMesh}) = new{SimpleMesh}(m, as)
 end
 
-const Polynet = Vector{Region}
+const Polynet{T} = Vector{Region{T}}
 
 Base.copy(r::Region) = Region(copy(r.meta), copy(r.areas))
 
@@ -96,8 +99,16 @@ function save(fn, pm::Polynet)::Polynet
     pm
 end
 
+import Meshes.boundingbox
+
+boundingbox(pnet::Polynet{PolyArea}) = boundingbox(map(boundingbox, filter(a->length(a) > 0, map(r->r.areas, pnet))))
+
+#boundingbox(sms::Vector{SimpleMesh}) = map(boundingbox, sms)
+
+boundingbox(mnet::Polynet{SimpleMesh}) = boundingbox(map(boundingbox, Iterators.flatten(filter(m->length(m) > 0, map(r->r.areas, mnet)))))
+
 function scaled_svg(pnet, width, height, filename; inhtml=true, digits=3, colorfn=nothing)
-    bbx = boundingbox(map(boundingbox, map(r->r.areas, pnet)))
+    bbx = boundingbox(pnet)
     xmin, ymin = coordinates(bbx.min)
     xmax, ymax = coordinates(bbx.max)
     xmx = xmax - xmin
@@ -111,7 +122,7 @@ function scaled_svg(pnet, width, height, filename; inhtml=true, digits=3, colorf
     asSvg(pnet, width, height, filename; fx, fy, xmx, ymx, inhtml, colorfn)
 end
 
-function asSvg(pnet, width, height, filename; fx=identity, fy=identity, xmx=0, ymx=0, colorfn=nothing, inhtml=true)
+function asSvg(pnet::Polynet{PolyArea}, width, height, filename; fx=identity, fy=identity, xmx=0, ymx=0, colorfn=nothing, inhtml=true)
     if xmx == 0
         xmx = width
     end
@@ -122,15 +133,36 @@ function asSvg(pnet, width, height, filename; fx=identity, fy=identity, xmx=0, y
         colorfn = (m)->"none"
     end
    
-    function pline(meta, polyarea)
-        Polyline(coordinates.(polyarea.outer.vertices); fx, fy, style=Style(;fill=colorfn(meta)))
+    pline(meta, polyarea) = Polyline(coordinates.(polyarea.outer.vertices); fx, fy, style=Style(;fill=colorfn(meta)))
+    w = (io, svg) -> foreach(region->
+                        foreach(polya->
+                            write(io, pline(r.meta, polya))
+                          , region.areas)
+                    , pnet)
+    SVG.write(filename, SVG.Svg(), width, height ; viewbox="0 0 $xmx $ymx", inhtml, objwrite_fn=w)
+end
+
+function asSvg(mnet::Polynet{SimpleMesh}, width, height, filename; fx=identity, fy=identity, xmx=0, ymx=0, colorfn=nothing, inhtml=true)
+    if xmx == 0
+        xmx = width
     end
-    w = (io, svg) -> foreach(r->foreach(pa->write(io, pline(r.meta, pa)), r.areas), pnet)
+    if ymx == 0
+        ymx = height
+    end    
+    if colorfn === nothing
+        colorfn = (m)->"none"
+    end
+
+    function pline(meta, tri)
+        coords = coordinates.(vertices(tri))
+        Polyline(vcat(coords, [coords[1]]); fx, fy, style=Style(;fill=colorfn(meta)))
+    end
+    w = (io, svg) -> foreach(reg->foreach(smesh->foreach(tri->write(io, pline(reg.meta, tri)), smesh), reg.areas), mnet) 
     SVG.write(filename, SVG.Svg(), width, height ; viewbox="0 0 $xmx $ymx", inhtml, objwrite_fn=w)
 end
 
 function polynet_from_kml(xdoc; digits=5)
-    pnet = Polynet()
+    pnet = Polynet{PolyArea}()
     for fr in get_elements_by_tagname(get_elements_by_tagname(root(xdoc), "Document")[1], "Folder")
         for pk in get_elements_by_tagname(fr, "Placemark")
             meta = Dict{String, Union{String, Float64}}()
@@ -145,7 +177,7 @@ function polynet_from_kml(xdoc; digits=5)
                     end
                 end
             end
-            region = Region(meta)
+            region = Region{PolyArea}(meta)
             for mg in get_elements_by_tagname(pk, "MultiGeometry")
                 for pol in get_elements_by_tagname(mg, "Polygon")
                     for bound in get_elements_by_tagname(pol, "outerBoundaryIs")
@@ -175,47 +207,27 @@ function get_or_cache_polynet(kml, cachefn; digits=5, force=false)
     pnet
 end
 
-function shared_points(pnet)
-    used = zeros(Int, length(pnet.points.xs))
-    for poly in pnet.polys
-        for pnt in poly.perimeter
-            used[pnt] += 1
-        end
-    end
-    used
-end
-
-function SMesh(pnet::Polynet)
-    points = Points2(pnet)
-    perims = Vector{Tuple}()
-    for reg in pnet.regions
-        for perim in reg.pointNs
-            push!(perims, Tuple(perim))
-        end 
-    end
-    SimpleMesh(points, map(p->connect(p, Ngon), perims))
-end
-
 function triangulate(pnet::Polynet)
-    triregs = Vector()
+    meshnet = Polynet{SimpleMesh}()
     for reg in pnet
-        tris = Vector()
+        meshes = Vector{SimpleMesh}()
         for pa in reg.areas
             try 
-                push!(tris, discretize(pa, Dehn1899()))
+                push!(meshes, discretize(pa, Dehn1899()))
             catch
+                nothing
             end
         end
-        push!(triregs, (reg.meta, tris))
+        push!(meshnet, Region{SimpleMesh}(reg.meta, meshes))
     end
-    triregs
+    meshnet
 end
+
 
 #==
 using KMLPolynetTools
 pnet = get_or_cache_polynet("/home/matt/wren/UkGeoData/uk.kml", "/home/matt/wren/UkGeoData/polynet_2dp.sj");
-panet = KMLPolynetTools.PolyAreaNet(pnet);
-tris =  KMLPolynetTools.triangulate(panet);
+
 ==#
 ###
 end
