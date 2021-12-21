@@ -3,18 +3,16 @@ module KMLPolynetTools
 using Meshes
 
 #types
-export Polynet, Region, triangulate, bbox
+export Polynet, Region, triangulate
 
 #methods
 export extract_polynet_from_kml, load, save, scaled_svg
 export get_or_cache_polynet
-export shared_points
 
 # dependencies
 using Serialization
 using LightXML
 using SVG
-using Pipe
 
 struct Region{T}
     meta::Dict
@@ -82,7 +80,7 @@ txtPoint2(txt; digits=5) = Point2(map(t->round(parse(Float64, t); digits), split
 
 function load(fn)::Union{Polynet, Nothing}
     pm = nothing
-    if isfile(fn) && filesize(fn) > 0
+    if filesize(fn) > 0
         open(fn, "r") do io
             pm = deserialize(fn)
         end
@@ -218,7 +216,6 @@ end
 #==
 using KMLPolynetTools
 pnet = get_or_cache_polynet("/home/matt/wren/UkGeoData/uk.kml", "/home/matt/wren/UkGeoData/polynet_2dp.sj");
-
 ==#
 ###
 end
