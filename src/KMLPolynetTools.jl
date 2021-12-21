@@ -20,9 +20,9 @@ struct Region{T}
     meta::Dict
     areas::Vector{T}
     Region{PolyArea}(m::Dict) = new{PolyArea}(m, Vector{PolyArea}())
-    Region{PolyArea}(m::Dict, as::Vector{PolyArea}) = new{PolyArea}(m, as)
+    Region{PolyArea}(m::Dict, pa::Vector{PolyArea}) = new{PolyArea}(m, pa)
     Region{SimpleMesh}(m::Dict) = new{SimpleMesh}(m, Vector{SimpleMesh}())
-    Region{SimpleMesh}(m::Dict, as::Vector{SimpleMesh}) = new{SimpleMesh}(m, as)
+    Region{SimpleMesh}(m::Dict, sm::Vector{SimpleMesh}) = new{SimpleMesh}(m, sm)
 end
 
 const Polynet{T} = Vector{Region{T}}
@@ -36,11 +36,9 @@ function split_at_intersections(points)
     s = 1
     i = 1
     while i < length(points)
+        push!(poly, points[i])
         n = findlast(match(points[i]), points[i+1:end-1])
-        if n === nothing
-            push!(poly, points[i])
-        else
-            push!(poly, points[i])
+        if n !== nothing
             append!(polys, split_at_intersections(points[i:i+n]))
             i = i + n 
         end 
@@ -102,9 +100,6 @@ end
 import Meshes.boundingbox
 
 boundingbox(pnet::Polynet{PolyArea}) = boundingbox(map(boundingbox, filter(a->length(a) > 0, map(r->r.areas, pnet))))
-
-#boundingbox(sms::Vector{SimpleMesh}) = map(boundingbox, sms)
-
 boundingbox(mnet::Polynet{SimpleMesh}) = boundingbox(map(boundingbox, Iterators.flatten(filter(m->length(m) > 0, map(r->r.areas, mnet)))))
 
 function scaled_svg(pnet, width, height, filename; inhtml=true, digits=3, colorfn=nothing)
@@ -134,11 +129,7 @@ function asSvg(pnet::Polynet{PolyArea}, width, height, filename; fx=identity, fy
     end
    
     pline(meta, polyarea) = Polyline(coordinates.(polyarea.outer.vertices); fx, fy, style=Style(;fill=colorfn(meta)))
-    w = (io, svg) -> foreach(region->
-                        foreach(polya->
-                            write(io, pline(r.meta, polya))
-                          , region.areas)
-                    , pnet)
+    w = (io, svg) -> foreach(reg->foreach(polya->write(io, pline(reg.meta, polya)), reg.areas), pnet)
     SVG.write(filename, SVG.Svg(), width, height ; viewbox="0 0 $xmx $ymx", inhtml, objwrite_fn=w)
 end
 
