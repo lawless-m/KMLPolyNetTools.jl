@@ -1,5 +1,7 @@
 module KMLPolynetTools
 
+using Meshes
+
 #types
 export Points, Poly, Polynet
 
@@ -14,18 +16,14 @@ using LightXML
 using SVG
 using Pipe
 
-# goo
-const PointXY = Tuple{Float64, Float64} # (x,y)
-
-struct Points 
-    d::Dict{PointXY, Int}
-    xs::Vector{Float64}
-    ys::Vector{Float64}
-    Points() = new(Dict{PointXY, Int}(), Vector{Float64}(), Vector{Float64}())
-    Points(d, xs, ys) = new(d, xs, ys)
+struct Points
+    p2s::Vector{Point2}
+    d::Dict{Point2, Int}
+    Points() = new(Vector{Point2}(), Dict{Point2, Int}())
+    Points(p2s, d) = new(p2s, d)
 end
 
-Base.copy(p::Points) = Points(copy(p.d), copy(p.xs), copy(p.ys))
+Base.copy(p::Points) = Points(copy(p.p2s), copy(p.d))
 
 struct Region
     meta::Dict
@@ -33,7 +31,29 @@ struct Region
     Region(m::Dict) = new(m, Vector{Vector{Int}}())
 end
 
+struct Polynet
+    points::Points
+    regions::Vector{Region}
+end
+
+Base.copy(p::Polynet) = Polynet(copy(p.points), copy(p.regions))
+
 Base.copy(r::Region) = Region(copy(r.meta), copy(r.polys))
+
+pArea(point2s::Vector{Point2}, perimeter::Vector{Int}) = PolyArea(point2s[perimeter])
+
+struct PolyAreaRegion
+    meta::Dict
+    polyareas::Vector{PolyArea}
+    PolyAreaRegion(p2s, r::Region) = new(r.meta, map(pns->PolyArea(p2s[pns]), r.pointNs))
+end
+
+struct PolyAreaNet
+    points::Points
+    regions::Vector{PolyAreaRegion}
+    PolyAreaNet(pnet::Polynet) = new(pnet.points, map(r->PolyAreaRegion(pnet.points.p2s, r), pnet.regions))
+end
+
 
 function split_at_intersections(pointNs::Vector{Int})
     match(n) = return t->t==n
@@ -66,13 +86,6 @@ function add_perimeters!(r::Region, pointNs::Vector{Int})
     r
 end
 
-struct Polynet
-    points::Points
-    regions::Vector{Region}
-end
-
-Base.copy(p::Polynet) = Polynet(copy(p.points), copy(p.regions))
-
 function remove_repeats(src)
     # src = [1,2,3,4,4,4,5,6,6,7,8,8,1]
     # tgt = [1,2,3,4,5,6,7,8,1]
@@ -93,18 +106,17 @@ function remove_repeats(src)
     tgt[1:tgti]
 end
 
-function txtXY(txt; digits=5)::PointXY
-    Tuple(map(t->round(parse(Float64, t); digits), split(txt, ",")))
+function txtPoint2(txt; digits=5)
+    Point2(map(t->round(parse(Float64, t); digits), split(txt, ",")))
 end
 
 function pointn(ps::Points, txt; digits=5)
-    xy = txtXY(txt; digits)
-    n = get(ps.d, xy, 0)
+    p2 = txtPoint2(txt; digits)
+    n = get(ps.d, p2, 0)
     if n == 0
-        n = length(ps.d) + 1
-        ps.d[xy] = n
-        push!(ps.xs, xy[1])
-        push!(ps.ys, xy[2])
+        n = length(ps.p2s) + 1
+        ps.d[p2] = n
+        push!(ps.p2s, p2)
     end
     n
 end
@@ -126,12 +138,12 @@ function save(fn, pm::Polynet)::Polynet
     pm
 end
 
-scaled_svg(pnet, filename; inhtml=true, digits=3, colorfn=nothing) = scaled_svg(pnet.points.xs, pnet.points.ys, pnet.regions, filename; inhtml, digits, colorfn)
-
-function scaled_svg(unscaled_xs, unscaled_ys, regions, filename; inhtml=true, digits=3, colorfn=nothing)
-    local xtreme, ytreme, xs, ys
-    xtreme = extrema(unscaled_xs)
-    ytreme = extrema(unscaled_ys)
+function scaled_svg(pnet, filename; inhtml=true, digits=3, colorfn=nothing)
+    cs = coordinates.(pnet.points.p2s)
+    xs = map(c->c[1], cs)
+    ys = map(c->c[2], cs)
+    xtreme = extrema(xs)
+    ytreme = extrema(ys)
     xmx = xtreme[2] - xtreme[1]
     ymx = ytreme[2] - ytreme[1]
     scale = 800 / min(xmx, ymx)
@@ -140,10 +152,10 @@ function scaled_svg(unscaled_xs, unscaled_ys, regions, filename; inhtml=true, di
     fx = x -> round(scale * (x - xtreme[1]); digits)
     fy = y -> round(ymx - scale * (y - ytreme[1]); digits)
 
-    xs = map(fx, unscaled_xs)
-    ys = map(fy, unscaled_ys)
+    xs = map(fx, xs)
+    ys = map(fy, ys)
 
-    asSvg(xs, ys, regions, filename, 800, 1200, "0 0 $xmx $ymx"; inhtml, colorfn)
+    asSvg(xs, ys, pnet.regions, filename, 800, 1200, "0 0 $xmx $ymx"; inhtml, colorfn)
 end
 
 function asSvg(xs, ys, regions::Vector{Region}, filename, width, height, viewbox; colorfn=nothing, inhtml=true)
@@ -176,7 +188,7 @@ function polynet_from_kml(xdoc; digits=5)
                 for scd in get_elements_by_tagname(ed, "SchemaData")
                     for sd in get_elements_by_tagname(scd, "SimpleData")
                         for a in attributes(sd)
-                            if name(a) == "name"
+                            if LightXML.name(a) == "name"
                                 meta[value(a)] = content(sd)
                             end
                         end
@@ -222,11 +234,40 @@ function shared_points(pnet)
     end
     used
 end
+
+function SMesh(pnet::Polynet)
+    points = Points2(pnet)
+    perims = Vector{Tuple}()
+    for reg in pnet.regions
+        for perim in reg.pointNs
+            push!(perims, Tuple(perim))
+        end 
+    end
+    SimpleMesh(points, map(p->connect(p, Ngon), perims))
+end
+
+triangulate(pnet::Polynet) = triangulate(PolyAreaNet(pnet))
+
+function triangulate(panet::PolyAreaNet)
+    triregs = Vector()
+    for reg in panet.regions
+        tris = Vector()
+        for pa in reg.polyareas
+            try 
+                push!(tris, discretize(pa, Dehn1899()))
+            catch
+            end
+        end
+        push!(triregs, (reg.meta, tris))
+    end
+    triregs
+end
+
 #==
 using KMLPolynetTools
-kml = "/home/matt/wren/UkGeoData/uk.kml";
-pnet = Polynet(KMLPolynetTools.points_regions_from_kml(KMLPolynetTools.parse_file(kml); digits=2)...)
-KMLPolynetTools.scaled_svg(pnet, "round_regions.html"; digits=0);
+pnet = get_or_cache_polynet("/home/matt/wren/UkGeoData/uk.kml", "/home/matt/wren/UkGeoData/polynet_2dp.sj");
+panet = KMLPolynetTools.PolyAreaNet(pnet);
+tris =  KMLPolynetTools.triangulate(panet);
 ==#
 ###
 end
