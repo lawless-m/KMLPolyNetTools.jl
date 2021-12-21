@@ -294,7 +294,7 @@ version = "1.2.0"
 uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
 
 [[deps.SVG]]
-git-tree-sha1 = "eb3ccf9d396cda8fe94ecf11ff21b39356d70f40"
+git-tree-sha1 = "a18d4bf12684cac5812a19f87e3e98788032fd7e"
 repo-rev = "master"
 repo-url = "https://github.com/lawless-m/SVG.jl"
 uuid = "f377ba27-75b0-41bf-bf2c-536bab790fd1"

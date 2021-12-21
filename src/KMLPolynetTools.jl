@@ -16,71 +16,42 @@ using LightXML
 using SVG
 using Pipe
 
-struct Points
-    p2s::Vector{Point2}
-    d::Dict{Point2, Int}
-    Points() = new(Vector{Point2}(), Dict{Point2, Int}())
-    Points(p2s, d) = new(p2s, d)
-end
-
-Base.copy(p::Points) = Points(copy(p.p2s), copy(p.d))
-
 struct Region
     meta::Dict
-    pointNs::Vector{Vector{Int}}
-    Region(m::Dict) = new(m, Vector{Vector{Int}}())
+    areas::Vector{PolyArea}
+    Region(m::Dict) = new(m, Vector{PolyArea}())
 end
 
-struct Polynet
-    points::Points
-    regions::Vector{Region}
-end
+const Polynet = Vector{Region}
 
-Base.copy(p::Polynet) = Polynet(copy(p.points), copy(p.regions))
+Base.copy(r::Region) = Region(copy(r.meta), copy(r.areas))
 
-Base.copy(r::Region) = Region(copy(r.meta), copy(r.polys))
-
-pArea(point2s::Vector{Point2}, perimeter::Vector{Int}) = PolyArea(point2s[perimeter])
-
-struct PolyAreaRegion
-    meta::Dict
-    polyareas::Vector{PolyArea}
-    PolyAreaRegion(p2s, r::Region) = new(r.meta, map(pns->PolyArea(p2s[pns]), r.pointNs))
-end
-
-struct PolyAreaNet
-    points::Points
-    regions::Vector{PolyAreaRegion}
-    PolyAreaNet(pnet::Polynet) = new(pnet.points, map(r->PolyAreaRegion(pnet.points.p2s, r), pnet.regions))
-end
-
-
-function split_at_intersections(pointNs::Vector{Int})
+function split_at_intersections(points)
     match(n) = return t->t==n
-    polys = Vector{Int}[]
-    poly = Int[]
+    polys = Vector{typeof(points)}()
+    poly = Vector{eltype(points)}()
     s = 1
     i = 1
-    while i < length(pointNs)
-        n = findlast(match(pointNs[i]), pointNs[i+1:end-1])
+    while i < length(points)
+        n = findlast(match(points[i]), points[i+1:end-1])
         if n === nothing
-            push!(poly, pointNs[i])
+            push!(poly, points[i])
         else
-            push!(poly, pointNs[i])
-            append!(polys, split_at_intersections(pointNs[i:i+n]))
+            push!(poly, points[i])
+            append!(polys, split_at_intersections(points[i:i+n]))
             i = i + n 
         end 
         i += 1
     end
-    push!(poly, pointNs[end])
+    push!(poly, points[end])
     push!(polys, poly)
     polys
 end
 
-function add_perimeters!(r::Region, pointNs::Vector{Int})
-    for ps in split_at_intersections(remove_repeats(pointNs))
-        if length(ps) > 3
-            push!(r.pointNs, ps)
+function add_perimeters!(r::Region, points)
+    for poly in split_at_intersections(remove_repeats(points))
+        if length(poly) > 3
+            push!(r.areas, PolyArea(poly))
         end
     end
     r
@@ -106,20 +77,7 @@ function remove_repeats(src)
     tgt[1:tgti]
 end
 
-function txtPoint2(txt; digits=5)
-    Point2(map(t->round(parse(Float64, t); digits), split(txt, ",")))
-end
-
-function pointn(ps::Points, txt; digits=5)
-    p2 = txtPoint2(txt; digits)
-    n = get(ps.d, p2, 0)
-    if n == 0
-        n = length(ps.p2s) + 1
-        ps.d[p2] = n
-        push!(ps.p2s, p2)
-    end
-    n
-end
+txtPoint2(txt; digits=5) = Point2(map(t->round(parse(Float64, t); digits), split(txt, ",")))
 
 function load(fn)::Union{Polynet, Nothing}
     pm = nothing
@@ -138,49 +96,41 @@ function save(fn, pm::Polynet)::Polynet
     pm
 end
 
-function scaled_svg(pnet, filename; inhtml=true, digits=3, colorfn=nothing)
-    cs = coordinates.(pnet.points.p2s)
-    xs = map(c->c[1], cs)
-    ys = map(c->c[2], cs)
-    xtreme = extrema(xs)
-    ytreme = extrema(ys)
-    xmx = xtreme[2] - xtreme[1]
-    ymx = ytreme[2] - ytreme[1]
-    scale = 800 / min(xmx, ymx)
+function scaled_svg(pnet, width, height, filename; inhtml=true, digits=3, colorfn=nothing)
+    bbx = boundingbox(map(boundingbox, map(r->r.areas, pnet)))
+    xmin, ymin = coordinates(bbx.min)
+    xmax, ymax = coordinates(bbx.max)
+    xmx = xmax - xmin
+    ymx = ymax - ymin
+    scale = min(width, height) / min(xmx, ymx)
     xmx *= scale
     ymx *= scale
-    fx = x -> round(scale * (x - xtreme[1]); digits)
-    fy = y -> round(ymx - scale * (y - ytreme[1]); digits)
+    fx = x -> round(scale * (x - xmin); digits)
+    fy = y -> round(ymx - scale * (y - ymin); digits)
 
-    xs = map(fx, xs)
-    ys = map(fy, ys)
-
-    asSvg(xs, ys, pnet.regions, filename, 800, 1200, "0 0 $xmx $ymx"; inhtml, colorfn)
+    asSvg(pnet, width, height, filename; fx, fy, xmx, ymx, inhtml, colorfn)
 end
 
-function asSvg(xs, ys, regions::Vector{Region}, filename, width, height, viewbox; colorfn=nothing, inhtml=true)
-    
+function asSvg(pnet, width, height, filename; fx=identity, fy=identity, xmx=0, ymx=0, colorfn=nothing, inhtml=true)
+    if xmx == 0
+        xmx = width
+    end
+    if ymx == 0
+        ymx = height
+    end    
     if colorfn === nothing
         colorfn = (m)->"none"
     end
    
-    function pline(meta, pointNs)
-        xy = remove_repeats(map(n->(xs[n], ys[n]), pointNs))
-        nxs = Vector{eltype(xs)}(undef, length(xy))
-        nys = Vector{eltype(ys)}(undef, length(xy))
-        for (i, (x,y)) in enumerate(xy)
-            nxs[i] = x
-            nys[i] = y
-        end
-        Polyline(nxs, nys, style=Style(;fill=colorfn(meta)))
+    function pline(meta, polyarea)
+        Polyline(coordinates.(polyarea.outer.vertices); fx, fy, style=Style(;fill=colorfn(meta)))
     end
-    w = (io, svg) -> foreach(r->foreach(ps->write(io, pline(r.meta, ps)), r.pointNs), regions)
-    SVG.write(filename, SVG.Svg(), width, height ; viewbox, inhtml, objwrite_fn=w)
+    w = (io, svg) -> foreach(r->foreach(pa->write(io, pline(r.meta, pa)), r.areas), pnet)
+    SVG.write(filename, SVG.Svg(), width, height ; viewbox="0 0 $xmx $ymx", inhtml, objwrite_fn=w)
 end
 
 function polynet_from_kml(xdoc; digits=5)
-    points = Points()
-    regions = Region[]
+    pnet = Polynet()
     for fr in get_elements_by_tagname(get_elements_by_tagname(root(xdoc), "Document")[1], "Folder")
         for pk in get_elements_by_tagname(fr, "Placemark")
             meta = Dict{String, Union{String, Float64}}()
@@ -201,16 +151,16 @@ function polynet_from_kml(xdoc; digits=5)
                     for bound in get_elements_by_tagname(pol, "outerBoundaryIs")
                         for lr in get_elements_by_tagname(bound, "LinearRing")
                             for cords in get_elements_by_tagname(lr, "coordinates")
-                                add_perimeters!(region, map(p->pointn(points, p; digits), split(content(cords), " ")))
+                                add_perimeters!(region, map(t->txtPoint2(t; digits), split(content(cords), " ")))
                             end
                         end
                     end
                 end
             end
-            push!(regions, region)
+            push!(pnet, region)
         end
     end
-    Polynet(points, regions)
+    pnet
 end
 
 function get_or_cache_polynet(kml, cachefn; digits=5, force=false)
@@ -246,13 +196,11 @@ function SMesh(pnet::Polynet)
     SimpleMesh(points, map(p->connect(p, Ngon), perims))
 end
 
-triangulate(pnet::Polynet) = triangulate(PolyAreaNet(pnet))
-
-function triangulate(panet::PolyAreaNet)
+function triangulate(pnet::Polynet)
     triregs = Vector()
-    for reg in panet.regions
+    for reg in pnet
         tris = Vector()
-        for pa in reg.polyareas
+        for pa in reg.areas
             try 
                 push!(tris, discretize(pa, Dehn1899()))
             catch
