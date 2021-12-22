@@ -7,7 +7,7 @@ export Polynet, Region, triangulate
 
 #methods
 export extract_polynet_from_kml, load, save, scaled_svg
-export get_or_cache_polynet
+export get_or_cache_polynet, inRegions
 
 # dependencies
 using Serialization
@@ -83,7 +83,7 @@ function load(fn)::Union{Polynet, Nothing}
     if filesize(fn) > 0
         open(fn, "r") do io
             pm = deserialize(fn)
-        end
+        ends
     end
     pm
 end
@@ -97,8 +97,25 @@ end
 
 import Meshes.boundingbox
 
-boundingbox(pnet::Polynet{PolyArea}) = boundingbox(map(boundingbox, filter(a->length(a) > 0, map(r->r.areas, pnet))))
-boundingbox(mnet::Polynet{SimpleMesh}) = boundingbox(map(boundingbox, Iterators.flatten(filter(m->length(m) > 0, map(r->r.areas, mnet)))))
+function boundingbox(pnet::Polynet)
+    bxs = convert(Vector{Box}, filter(bx->bx !== nothing, map(boundingbox, pnet)))
+    length(bxs) > 0 ? boundingbox(bxs) : nothing
+end
+boundingbox(sms::Vector{SimpleMesh}) =  boundingbox(map(boundingbox, sms))
+boundingbox(region::Region) = length(region.areas) > 0 ? boundingbox(map(boundingbox, region.areas)) : nothing
+
+import Base.in
+
+function in(p::Point2, r::Region)
+    for a in r.areas
+        if p in a
+            return true
+        end
+    end
+    false
+end
+
+inRegions(p::Point, pnet::Polynet) = pnet[map(r->p in r, pnet)]
 
 function scaled_svg(pnet, width, height, filename; inhtml=true, digits=3, colorfn=nothing)
     bbx = boundingbox(pnet)
@@ -215,7 +232,12 @@ end
 
 #==
 using KMLPolynetTools
-pnet = get_or_cache_polynet("/home/matt/wren/UkGeoData/uk.kml", "/home/matt/wren/UkGeoData/polynet_2dp.sj");
+kml = "Local_Planning_Authorities_May_2021_UK_BFC.kml"
+geodir = "/home/matt/wren/UkGeoData"
+psj = "polynet_2dp.sj"
+pnet = get_or_cache_polynet(joinpath(geodir, kml), joinpath(geodir, psj));
+
 ==#
+
 ###
 end
