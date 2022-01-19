@@ -28,7 +28,8 @@ const Polynet{T} = Vector{Region{T}}
 Base.copy(r::Region) = Region(copy(r.meta), copy(r.areas))
 
 function split_at_intersections(points)
-    match(n) = return t->t==n
+    match(n) = t->t==n
+
     polys = Vector{typeof(points)}()
     poly = Vector{eltype(points)}()
     s = 1
@@ -83,7 +84,7 @@ function load(fn)::Union{Polynet, Nothing}
     if filesize(fn) > 0
         open(fn, "r") do io
             pm = deserialize(fn)
-        ends
+        end
     end
     pm
 end
