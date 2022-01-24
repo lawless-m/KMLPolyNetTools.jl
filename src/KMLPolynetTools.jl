@@ -144,7 +144,7 @@ function asSvg(pnet::Polynet{PolyArea}, width, height, filename; fx=identity, fy
         colorfn = (m)->"none"
     end
    
-    pline(meta, polyarea) = Polyline(coordinates.(polyarea.outer.vertices); fx, fy, style=Style(;fill=colorfn(meta)))
+    pline(meta, polyarea) = Polyline(coordinates.(polyarea.outer.vertices), fx, fy; style=Style(;fill=colorfn(meta)))
     w = (io, svg) -> foreach(reg->foreach(polya->write(io, pline(reg.meta, polya)), reg.areas), pnet)
     SVG.write(filename, SVG.Svg(), width, height ; viewbox="0 0 $xmx $ymx", inhtml, objwrite_fn=w)
 end
@@ -162,7 +162,7 @@ function asSvg(mnet::Polynet{SimpleMesh}, width, height, filename; fx=identity, 
 
     function pline(meta, tri)
         coords = coordinates.(vertices(tri))
-        Polyline(vcat(coords, [coords[1]]); fx, fy, style=Style(;fill=colorfn(meta)))
+        Polyline(vcat(coords, [coords[1]]), fx, fy; style=Style(;fill=colorfn(meta)))
     end
     w = (io, svg) -> foreach(reg->foreach(smesh->foreach(tri->write(io, pline(reg.meta, tri)), smesh), reg.areas), mnet) 
     SVG.write(filename, SVG.Svg(), width, height ; viewbox="0 0 $xmx $ymx", inhtml, objwrite_fn=w)
